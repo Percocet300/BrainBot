@@ -175,6 +175,7 @@ async def post_memes(ctx, channel_name='general'):
         await ctx.send("This command can only be used in a server!")
         return
 
+    # Handle channel mentions
     if ctx.message.channel_mentions:
         target_channel = ctx.message.channel_mentions[0]
     else:
@@ -185,50 +186,69 @@ async def post_memes(ctx, channel_name='general'):
         await ctx.send(f"Couldn't find the #{channel_name} channel!")
         return
 
+    # Get unposted memes for this channel
     unposted_memes = meme_manager.get_unposted_memes(target_channel.id)
 
     if not unposted_memes:
+        # Only send this message once
         await ctx.send("No new memes to post!")
         return
 
-    await ctx.send(f"Posting {len(unposted_memes)} new memes to #{target_channel.name}...")
+    # Send status message
+    status_message = await ctx.send(f"Posting {len(unposted_memes)} new memes to #{target_channel.name}...")
 
-    for meme_url in unposted_memes:
-        try:
+    try:
+        for meme_url in unposted_memes:
             await target_channel.send(meme_url)
             meme_manager.mark_as_posted(target_channel.id, meme_url)
             await asyncio.sleep(1)
-        except Exception as e:
-            await ctx.send(f"Failed to post meme: {meme_url}\nError: {str(e)}")
 
-    await ctx.send("Finished posting all new memes!")
+        # Edit the status message instead of sending a new one
+        await status_message.edit(content="Finished posting all new memes!")
+    except Exception as e:
+        await ctx.send(f"An error occurred while posting memes: {str(e)}")
 
 @bot.event
 async def on_message_delete(message):
-    if message.author.id != bot.user.id:
-        return
-        
-    def extract_meme_url(content):
-        for meme in meme_manager.memes:
-            if meme in content:
-                return meme
-        return None
+    try:
+        # Check if the deleted message was from our bot
+        if message.author.id != bot.user.id:
+            return
+            
+        # Function to extract meme URL from message
+        def extract_meme_url(content):
+            for meme in meme_manager.memes:
+                if meme in content:
+                    return meme
+            return None
 
-    meme_url = extract_meme_url(message.content)
-    if meme_url:
-        try:
-            async for entry in message.guild.audit_logs(action=discord.AuditLogAction.message_delete, limit=1):
-                if entry.target.id == bot.user.id and entry.created_at.timestamp() > (message.created_at.timestamp() - 5):
-                    deleter = entry.user
-                    await message.channel.send(f"{deleter.mention} deleted my meme! Here it is again:")
-                    await message.channel.send(meme_url)
-                    return
+        # Check if the message contains one of our memes
+        meme_url = extract_meme_url(message.content)
+        if meme_url:
+            try:
+                # Get the audit log entry for this deletion
+                async for entry in message.guild.audit_logs(action=discord.AuditLogAction.message_delete, limit=1):
+                    if entry.target.id == bot.user.id:
+                        deleter = entry.user
+                        # Don't repost if the bot owner deleted it
+                        if deleter.id == ALLOWED_USER_ID:
+                            return
+                        await message.channel.send(f"{deleter.mention} deleted my meme! Here it is again:")
+                        await message.channel.send(meme_url)
+                        return
 
-            await message.channel.send("Someone deleted my meme! Here it is again:")
-            await message.channel.send(meme_url)
-                    
-        except Exception as e:
-            print(f"Failed to repost meme: {e}")
+                # If we couldn't find the deleter in audit logs
+                await message.channel.send("Someone deleted my meme! Here it is again:")
+                await message.channel.send(meme_url)
+                        
+            except Exception as e:
+                print(f"Failed to repost meme: {e}")
+                # Try to repost anyway if there was an error checking audit logs
+                await message.channel.send("Someone deleted my meme! Here it is again:")
+                await message.channel.send(meme_url)
+
+    except Exception as e:
+        print(f"Error in on_message_delete: {e}")
 
 @bot.command(name='clear_posted')
 async def clear_posted(ctx, channel_name=None):
