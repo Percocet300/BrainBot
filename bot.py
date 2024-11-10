@@ -179,11 +179,9 @@ async def post_memes(ctx, *, channel_name='general'):
     if ctx.message.channel_mentions:
         target_channel = ctx.message.channel_mentions[0]
     else:
-        # Clean up the channel name
         channel_name = channel_name.strip('#').lower()
-        # Find channel by exact name match
         target_channel = discord.utils.get(ctx.guild.channels, 
-                                         name=channel_name.replace(' ', '-'))  # Replace spaces with dashes
+                                         name=channel_name.replace(' ', '-'))
 
     if not target_channel:
         await ctx.send(f"Couldn't find the #{channel_name} channel!")
@@ -196,18 +194,22 @@ async def post_memes(ctx, *, channel_name='general'):
         await ctx.send("No new memes to post!")
         return
 
-    # Send status message
-    status_message = await ctx.send(f"Posting {len(unposted_memes)} new memes to #{target_channel.name}...")
-
+    # Send single status message
+    message_sent = False  # Flag to track if we've sent the completion message
+    
     try:
         for meme_url in unposted_memes:
             await target_channel.send(meme_url)
             meme_manager.mark_as_posted(target_channel.id, meme_url)
             await asyncio.sleep(1)
-
-        await status_message.edit(content="Finished posting all new memes!")
+        
+        if not message_sent:
+            await ctx.send("Finished posting all new memes!")
+            message_sent = True
+            
     except Exception as e:
-        await ctx.send(f"An error occurred while posting memes: {str(e)}")
+        if not message_sent:
+            await ctx.send(f"An error occurred while posting memes: {str(e)}")
 
 @bot.event
 async def on_message_delete(message):
