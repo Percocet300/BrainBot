@@ -79,13 +79,13 @@ class MemeManager:
         return False
 
     def get_unposted_memes(self, channel_id):
-        channel_key = str(channel_id)  # Convert to string for JSON compatibility
+        channel_key = str(channel_id)  # Convert channel ID to string
         if channel_key not in self.posted_memes:
             self.posted_memes[channel_key] = []
         return [meme for meme in self.memes if meme not in self.posted_memes[channel_key]]
 
     def mark_as_posted(self, channel_id, meme_url):
-        channel_key = str(channel_id)  # Convert to string for JSON compatibility
+        channel_key = str(channel_id)
         if channel_key not in self.posted_memes:
             self.posted_memes[channel_key] = []
         if meme_url not in self.posted_memes[channel_key]:
@@ -170,7 +170,7 @@ async def list_memes(ctx):
         await ctx.send('No memes stored yet!')
 
 @bot.command(name='post_memes')
-async def post_memes(ctx, channel_name='general'):
+async def post_memes(ctx, *, channel_name='general'):
     if not ctx.guild:
         await ctx.send("This command can only be used in a server!")
         return
@@ -179,8 +179,11 @@ async def post_memes(ctx, channel_name='general'):
     if ctx.message.channel_mentions:
         target_channel = ctx.message.channel_mentions[0]
     else:
-        channel_name = channel_name.strip('#')
-        target_channel = discord.utils.get(ctx.guild.channels, name=channel_name)
+        # Clean up the channel name
+        channel_name = channel_name.strip('#').lower()
+        # Find channel by exact name match
+        target_channel = discord.utils.get(ctx.guild.channels, 
+                                         name=channel_name.replace(' ', '-'))  # Replace spaces with dashes
 
     if not target_channel:
         await ctx.send(f"Couldn't find the #{channel_name} channel!")
@@ -190,7 +193,6 @@ async def post_memes(ctx, channel_name='general'):
     unposted_memes = meme_manager.get_unposted_memes(target_channel.id)
 
     if not unposted_memes:
-        # Only send this message once
         await ctx.send("No new memes to post!")
         return
 
@@ -203,7 +205,6 @@ async def post_memes(ctx, channel_name='general'):
             meme_manager.mark_as_posted(target_channel.id, meme_url)
             await asyncio.sleep(1)
 
-        # Edit the status message instead of sending a new one
         await status_message.edit(content="Finished posting all new memes!")
     except Exception as e:
         await ctx.send(f"An error occurred while posting memes: {str(e)}")
