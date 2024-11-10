@@ -50,17 +50,17 @@ class MemeManager:
         try:
             if os.path.exists(self.posted_filename):
                 with open(self.posted_filename, 'r') as file:
-                    data = json.load(file)
-                    self.posted_memes = {int(k): set(v) for k, v in data.items()}
+                    self.posted_memes = json.load(file)
+            else:
+                self.posted_memes = {}
         except Exception as e:
             print(f"Error loading posted memes: {e}")
             self.posted_memes = {}
 
     def save_posted_memes(self):
         try:
-            data = {str(k): list(v) for k, v in self.posted_memes.items()}
             with open(self.posted_filename, 'w') as file:
-                json.dump(data, file, indent=4)
+                json.dump(self.posted_memes, file, indent=4)
         except Exception as e:
             print(f"Error saving posted memes: {e}")
 
@@ -79,15 +79,18 @@ class MemeManager:
         return False
 
     def get_unposted_memes(self, channel_id):
-        if channel_id not in self.posted_memes:
-            self.posted_memes[channel_id] = set()
-        return [meme for meme in self.memes if meme not in self.posted_memes[channel_id]]
+        channel_key = str(channel_id)  # Convert to string for JSON compatibility
+        if channel_key not in self.posted_memes:
+            self.posted_memes[channel_key] = []
+        return [meme for meme in self.memes if meme not in self.posted_memes[channel_key]]
 
     def mark_as_posted(self, channel_id, meme_url):
-        if channel_id not in self.posted_memes:
-            self.posted_memes[channel_id] = set()
-        self.posted_memes[channel_id].add(meme_url)
-        self.save_posted_memes()
+        channel_key = str(channel_id)  # Convert to string for JSON compatibility
+        if channel_key not in self.posted_memes:
+            self.posted_memes[channel_key] = []
+        if meme_url not in self.posted_memes[channel_key]:
+            self.posted_memes[channel_key].append(meme_url)
+            self.save_posted_memes()
 
 # Initialize MemeManager
 meme_manager = MemeManager()
@@ -101,18 +104,23 @@ async def on_ready():
 
 @bot.command(name='upload_memes')
 async def upload_memes(ctx):
+    # Check if user is authorized
     if ctx.author.id != ALLOWED_USER_ID:
         await ctx.send("You don't have permission to use this command!")
         return
 
+    # Check if command is used in DMs
     if not isinstance(ctx.channel, discord.DMChannel):
         await ctx.send("Please use this command in DMs!")
         return
 
-    await ctx.send("Please send your images. Type 'done' when you're finished.")
+    await ctx.send("Please send your images or videos. Type 'done' when you're finished.")
 
     def check(m):
         return m.author.id == ALLOWED_USER_ID and m.channel == ctx.channel
+
+    # List of allowed file extensions
+    allowed_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.mp4', '.mov', '.webm']
 
     while True:
         try:
@@ -124,15 +132,19 @@ async def upload_memes(ctx):
 
             if message.attachments:
                 for attachment in message.attachments:
-                    if any(attachment.filename.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif']):
+                    if any(attachment.filename.lower().endswith(ext) for ext in allowed_extensions):
+                        # Check file size (8MB limit for free Discord servers)
+                        if attachment.size > 8 * 1024 * 1024:  # 8MB in bytes
+                            await ctx.send(f"Warning: {attachment.filename} is over 8MB and might not play in some servers!")
+                            
                         if meme_manager.add_meme(attachment.url):
                             await ctx.send(f"Added: {attachment.url}")
                         else:
-                            await ctx.send(f"This meme was already in the list!")
+                            await ctx.send(f"This file was already in the list!")
                     else:
-                        await ctx.send(f"Skipped {attachment.filename} - not a supported image format")
+                        await ctx.send(f"Skipped {attachment.filename} - not a supported format. Allowed formats: {', '.join(allowed_extensions)}")
             else:
-                await ctx.send("No images found in message. Please send images or type 'done' to finish.")
+                await ctx.send("No files found in message. Please send images/videos or type 'done' to finish.")
 
         except TimeoutError:
             await ctx.send("Upload session timed out after 60 seconds of inactivity.")
@@ -217,6 +229,32 @@ async def on_message_delete(message):
                     
         except Exception as e:
             print(f"Failed to repost meme: {e}")
+
+@bot.command(name='clear_posted')
+async def clear_posted(ctx, channel_name=None):
+    if ctx.author.id != ALLOWED_USER_ID:
+        await ctx.send("You don't have permission to use this command!")
+        return
+
+    if ctx.message.channel_mentions:
+        target_channel = ctx.message.channel_mentions[0]
+    elif channel_name:
+        channel_name = channel_name.strip('#')
+        target_channel = discord.utils.get(ctx.guild.channels, name=channel_name)
+    else:
+        target_channel = ctx.channel
+
+    if not target_channel:
+        await ctx.send(f"Couldn't find the specified channel!")
+        return
+
+    channel_key = str(target_channel.id)
+    if channel_key in meme_manager.posted_memes:
+        meme_manager.posted_memes[channel_key] = []
+        meme_manager.save_posted_memes()
+        await ctx.send(f"Cleared posted memes tracking for #{target_channel.name}")
+    else:
+        await ctx.send(f"No posted memes were tracked for #{target_channel.name}")
 
 # Replace with your bot token
 bot.run(TOKEN)
