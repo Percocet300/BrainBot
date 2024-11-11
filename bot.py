@@ -22,7 +22,7 @@ intents.guild_messages = True
 intents.dm_messages = True
 
 # Initialize bot with both prefix and slash commands
-bot = commands.Bot(command_prefix='!', intents=intents, command_prefix='!', help_command=None)
+bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
 # Add this to increase message cache
 bot.max_messages = 10000  # Adjust number as needed
