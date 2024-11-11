@@ -86,10 +86,17 @@ class MemeManager:
         return False
 
     def get_unposted_memes(self, channel_id):
-        channel_key = str(channel_id)  # Convert channel ID to string
+        channel_key = str(channel_id)
+        print(f"Checking unposted memes for channel: {channel_key}")
+        print(f"Current posted_memes state: {self.posted_memes}")
+        
         if channel_key not in self.posted_memes:
-            self.posted_memes[channel_key] = []
-        return [meme for meme in self.memes if meme not in self.posted_memes[channel_key]]
+            print(f"Channel {channel_key} not found in posted_memes, returning all memes")
+            return self.memes.copy()
+            
+        unposted = [meme for meme in self.memes if meme not in self.posted_memes[channel_key]]
+        print(f"Found {len(unposted)} unposted memes for channel {channel_key}")
+        return unposted
 
     def mark_as_posted(self, channel_id, meme_url):
         channel_key = str(channel_id)
@@ -221,8 +228,11 @@ async def post_memes(ctx, *, channel_name='general'):
         await ctx.send(f"Couldn't find the #{channel_name} channel!")
         return
 
+    print(f"Posting memes in channel: {target_channel.name} (ID: {target_channel.id})")
+    
     # Get unposted memes for this channel
     unposted_memes = meme_manager.get_unposted_memes(target_channel.id)
+    print(f"Found {len(unposted_memes)} unposted memes for this channel")
 
     if not unposted_memes:
         await ctx.send("No new memes to post!")
@@ -233,6 +243,7 @@ async def post_memes(ctx, *, channel_name='general'):
     
     try:
         for meme_url in unposted_memes:
+            print(f"Posting meme: {meme_url}")
             sent_message = await target_channel.send(meme_url)
             print(f"Tracking message ID: {sent_message.id} with URL: {meme_url}")
             # Track the sent message
@@ -339,6 +350,118 @@ async def clear_posted(ctx, channel_name=None):
         await ctx.send(f"Cleared posted memes tracking for #{target_channel.name}")
     else:
         await ctx.send(f"No posted memes were tracked for #{target_channel.name}")
+
+@bot.tree.command(name="post_memes", description="Post memes in a specified channel")
+async def slash_post_memes(interaction: discord.Interaction, channel: discord.TextChannel = None):
+    if not channel:
+        channel = interaction.channel
+    
+    await interaction.response.defer()
+    
+    print(f"Posting memes in channel: {channel.name} (ID: {channel.id})")
+    
+    unposted_memes = meme_manager.get_unposted_memes(channel.id)
+    print(f"Found {len(unposted_memes)} unposted memes for this channel")
+
+    if not unposted_memes:
+        await interaction.followup.send("No new memes to post!")
+        return
+
+    try:
+        for meme_url in unposted_memes:
+            print(f"Posting meme: {meme_url}")
+            sent_message = await channel.send(meme_url)
+            print(f"Tracking message ID: {sent_message.id} with URL: {meme_url}")
+            sent_memes[sent_message.id] = {
+                'channel_id': channel.id,
+                'meme_url': meme_url,
+                'timestamp': datetime.datetime.now()
+            }
+            meme_manager.mark_as_posted(channel.id, meme_url)
+            await asyncio.sleep(1)
+        
+        await interaction.followup.send("Finished posting all new memes!")
+            
+    except Exception as e:
+        await interaction.followup.send(f"An error occurred while posting memes: {str(e)}")
+
+@bot.tree.command(name="clear_posted", description="Clear posted memes tracking for a channel")
+async def slash_clear_posted(interaction: discord.Interaction, channel: discord.TextChannel = None):
+    if interaction.user.id != ALLOWED_USER_ID:
+        await interaction.response.send_message("You don't have permission to use this command!", ephemeral=True)
+        return
+
+    if not channel:
+        channel = interaction.channel
+
+    channel_key = str(channel.id)
+    if channel_key in meme_manager.posted_memes:
+        meme_manager.posted_memes[channel_key] = []
+        meme_manager.save_posted_memes()
+        await interaction.response.send_message(f"Cleared posted memes tracking for #{channel.name}")
+    else:
+        await interaction.response.send_message(f"No posted memes were tracked for #{channel.name}")
+
+@bot.tree.command(name="listmemes", description="List all stored memes (owner only)")
+async def slash_list_memes(interaction: discord.Interaction):
+    if interaction.user.id != ALLOWED_USER_ID:
+        await interaction.response.send_message("You don't have permission to use this command!", ephemeral=True)
+        return
+
+    await interaction.response.defer()
+
+    if not meme_manager.memes:
+        await interaction.followup.send('No memes stored yet!')
+        return
+
+    await interaction.followup.send(f'Total memes stored: {len(meme_manager.memes)}')
+    
+    for i, meme in enumerate(meme_manager.memes, 1):
+        await interaction.channel.send(f'Meme {i}:\n{meme}')
+        await asyncio.sleep(1)
+
+@bot.command(name='clear_all')
+async def clear_all(ctx):
+    if ctx.author.id != ALLOWED_USER_ID:
+        await ctx.send("You don't have permission to use this command!")
+        return
+        
+    sent_memes.clear()
+    meme_manager.posted_memes.clear()
+    meme_manager.save_posted_memes()
+    
+    await ctx.send("Cleared all message tracking and posted memes history!")
+
+@bot.command(name='clear_tracking')
+async def clear_tracking(ctx):
+    if ctx.author.id != ALLOWED_USER_ID:
+        await ctx.send("You don't have permission to use this command!")
+        return
+        
+    sent_memes.clear()
+    await ctx.send("Cleared message tracking!")
+
+# Add slash command versions
+@bot.tree.command(name="clear_all", description="Clear all bot memory including message tracking and posted memes (owner only)")
+async def slash_clear_all(interaction: discord.Interaction):
+    if interaction.user.id != ALLOWED_USER_ID:
+        await interaction.response.send_message("You don't have permission to use this command!", ephemeral=True)
+        return
+        
+    sent_memes.clear()
+    meme_manager.posted_memes.clear()
+    meme_manager.save_posted_memes()
+    
+    await interaction.response.send_message("Cleared all message tracking and posted memes history!")
+
+@bot.tree.command(name="clear_tracking", description="Clear message tracking memory (owner only)")
+async def slash_clear_tracking(interaction: discord.Interaction):
+    if interaction.user.id != ALLOWED_USER_ID:
+        await interaction.response.send_message("You don't have permission to use this command!", ephemeral=True)
+        return
+        
+    sent_memes.clear()
+    await interaction.response.send_message("Cleared message tracking!")
 
 # Replace with your bot token
 bot.run(TOKEN)
