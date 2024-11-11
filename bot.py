@@ -4,6 +4,7 @@ import json
 import os
 import asyncio
 from dotenv import load_dotenv
+import datetime
 
 # Load environment variables
 load_dotenv()
@@ -17,9 +18,16 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.guilds = True
 intents.messages = True
+intents.message_content = True
+intents.guild_messages = True
+intents.dm_messages = True
 
 # Initialize bot
 bot = commands.Bot(command_prefix='!', intents=intents)
+
+# Add this to increase message cache
+bot.max_messages = 10000  # Adjust number as needed
+bot.message_cache_max_size = 10000  # Add this
 
 class MemeManager:
     def __init__(self, filename='memes.txt'):
@@ -94,6 +102,9 @@ class MemeManager:
 
 # Initialize MemeManager
 meme_manager = MemeManager()
+
+# Add a message tracking dictionary
+sent_memes = {}
 
 @bot.event
 async def on_ready():
@@ -205,7 +216,13 @@ async def post_memes(ctx, *, channel_name='general'):
     
     try:
         for meme_url in unposted_memes:
-            await target_channel.send(meme_url)
+            sent_message = await target_channel.send(meme_url)
+            # Track the sent message
+            sent_memes[sent_message.id] = {
+                'channel_id': target_channel.id,
+                'meme_url': meme_url,
+                'timestamp': datetime.datetime.now()
+            }
             meme_manager.mark_as_posted(target_channel.id, meme_url)
             await asyncio.sleep(1)
         
@@ -224,15 +241,21 @@ async def on_message_delete(message):
         if message.author.id != bot.user.id:
             return
             
-        # Function to extract meme URL from message
-        def extract_meme_url(content):
-            for meme in meme_manager.memes:
-                if meme in content:
-                    return meme
-            return None
+        # Check both tracked messages and content
+        meme_url = None
+        if message.id in sent_memes:
+            meme_url = sent_memes[message.id]['meme_url']
+        else:
+            # Function to extract meme URL from message
+            def extract_meme_url(content):
+                for meme in meme_manager.memes:
+                    if meme in content:
+                        return meme
+                return None
 
-        # Check if the message contains one of our memes
-        meme_url = extract_meme_url(message.content)
+            # Check if the message contains one of our memes
+            meme_url = extract_meme_url(message.content)
+
         if meme_url:
             try:
                 # Get the audit log entry for this deletion
