@@ -101,6 +101,12 @@ async def on_ready():
     print(f'Logged in as {bot.user.name}')
     print(f'Bot ID: {bot.user.id}')
     print(f'Loaded {len(meme_manager.memes)} memes')
+    print(f'Shard ID: {bot.shard_id}')
+
+@bot.event
+async def on_socket_response(msg):
+    if msg.get("t") == "MESSAGE_CREATE":
+        print(f"Message sent: {msg.get('d', {}).get('content')} | Author: {msg.get('d', {}).get('author', {}).get('username')}")
 
 @bot.command(name='upload_memes')
 async def upload_memes(ctx):
