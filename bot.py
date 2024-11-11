@@ -18,12 +18,11 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.guilds = True
 intents.messages = True
-intents.message_content = True
 intents.guild_messages = True
 intents.dm_messages = True
 
-# Initialize bot
-bot = commands.Bot(command_prefix='!', intents=intents)
+# Initialize bot with both prefix and slash commands
+bot = commands.Bot(command_prefix='!', intents=intents, command_prefix='!', help_command=None)
 
 # Add this to increase message cache
 bot.max_messages = 10000  # Adjust number as needed
@@ -113,6 +112,13 @@ async def on_ready():
     print(f'Bot ID: {bot.user.id}')
     print(f'Loaded {len(meme_manager.memes)} memes')
     print(f'Shard ID: {bot.shard_id}')
+    
+    # Sync slash commands
+    try:
+        synced = await bot.tree.sync()
+        print(f"Synced {len(synced)} command(s)")
+    except Exception as e:
+        print(f"Failed to sync commands: {e}")
 
 @bot.event
 async def on_socket_response(msg):
@@ -180,19 +186,20 @@ async def remove_meme(ctx, url):
 
 @bot.command(name='listmemes')
 async def list_memes(ctx):
+    # Check if user is authorized
+    if ctx.author.id != ALLOWED_USER_ID:
+        await ctx.send("You don't have permission to use this command!")
+        return
+
     if not meme_manager.memes:
         await ctx.send('No memes stored yet!')
         return
 
-    # Split memes into chunks of 10 memes each
-    chunk_size = 10
-    meme_chunks = [meme_manager.memes[i:i + chunk_size] for i in range(0, len(meme_manager.memes), chunk_size)]
-    
     await ctx.send(f'Total memes stored: {len(meme_manager.memes)}')
     
-    for i, chunk in enumerate(meme_chunks, 1):
-        meme_list = '\n'.join(f'{(i-1)*chunk_size + idx + 1}. {meme}' for idx, meme in enumerate(chunk))
-        await ctx.send(f'Memes {(i-1)*chunk_size + 1}-{(i-1)*chunk_size + len(chunk)}:\n{meme_list}')
+    # Send each meme as a separate message
+    for i, meme in enumerate(meme_manager.memes, 1):
+        await ctx.send(f'Meme {i}:\n{meme}')
         # Add a small delay to avoid rate limiting
         await asyncio.sleep(1)
 
