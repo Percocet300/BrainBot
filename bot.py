@@ -180,11 +180,21 @@ async def remove_meme(ctx, url):
 
 @bot.command(name='listmemes')
 async def list_memes(ctx):
-    if meme_manager.memes:
-        meme_list = '\n'.join(meme_manager.memes)
-        await ctx.send(f'Stored memes:\n{meme_list}')
-    else:
+    if not meme_manager.memes:
         await ctx.send('No memes stored yet!')
+        return
+
+    # Split memes into chunks of 10 memes each
+    chunk_size = 10
+    meme_chunks = [meme_manager.memes[i:i + chunk_size] for i in range(0, len(meme_manager.memes), chunk_size)]
+    
+    await ctx.send(f'Total memes stored: {len(meme_manager.memes)}')
+    
+    for i, chunk in enumerate(meme_chunks, 1):
+        meme_list = '\n'.join(f'{(i-1)*chunk_size + idx + 1}. {meme}' for idx, meme in enumerate(chunk))
+        await ctx.send(f'Memes {(i-1)*chunk_size + 1}-{(i-1)*chunk_size + len(chunk)}:\n{meme_list}')
+        # Add a small delay to avoid rate limiting
+        await asyncio.sleep(1)
 
 @bot.command(name='post_memes')
 async def post_memes(ctx, *, channel_name='general'):
