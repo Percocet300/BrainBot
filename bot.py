@@ -217,6 +217,7 @@ async def post_memes(ctx, *, channel_name='general'):
     try:
         for meme_url in unposted_memes:
             sent_message = await target_channel.send(meme_url)
+            print(f"Tracking message ID: {sent_message.id} with URL: {meme_url}")
             # Track the sent message
             sent_memes[sent_message.id] = {
                 'channel_id': target_channel.id,
@@ -237,15 +238,24 @@ async def post_memes(ctx, *, channel_name='general'):
 @bot.event
 async def on_message_delete(message):
     try:
+        print(f"Message deletion detected!")
+        print(f"Author ID: {message.author.id}")
+        print(f"Bot ID: {bot.user.id}")
+        print(f"Message content: {message.content}")
+        print(f"Message ID in sent_memes: {message.id in sent_memes}")
+        
         # Check if the deleted message was from our bot
         if message.author.id != bot.user.id:
+            print("Message was not from bot")
             return
             
         # Check both tracked messages and content
         meme_url = None
         if message.id in sent_memes:
+            print("Found message in sent_memes")
             meme_url = sent_memes[message.id]['meme_url']
         else:
+            print("Message not found in sent_memes, checking content")
             # Function to extract meme URL from message
             def extract_meme_url(content):
                 for meme in meme_manager.memes:
@@ -255,21 +265,26 @@ async def on_message_delete(message):
 
             # Check if the message contains one of our memes
             meme_url = extract_meme_url(message.content)
+            print(f"Extracted meme URL: {meme_url}")
 
         if meme_url:
             try:
+                print("Checking audit logs")
                 # Get the audit log entry for this deletion
                 async for entry in message.guild.audit_logs(action=discord.AuditLogAction.message_delete, limit=1):
+                    print(f"Found audit log entry: {entry.user}")
                     if entry.target.id == bot.user.id:
                         deleter = entry.user
                         # Don't repost if the bot owner deleted it
                         if deleter.id == ALLOWED_USER_ID:
+                            print("Bot owner deleted message")
                             return
                         await message.channel.send(f"{deleter.mention} deleted my meme! Here it is again:")
                         await message.channel.send(meme_url)
                         return
 
                 # If we couldn't find the deleter in audit logs
+                print("Deleter not found in audit logs")
                 await message.channel.send("Someone deleted my meme! Here it is again:")
                 await message.channel.send(meme_url)
                         
